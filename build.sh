@@ -40,7 +40,7 @@ fi
 # ============================================================
 
 # Kernel build configuration
-KERNEL_NAME="VorteX-thenoah77-"
+KERNEL_NAME="Astra-thenoah77-"
 DEVICE="RMX2061"
 VARIANT="perf"
 BUILD_TYPE="nonKSU"
@@ -63,6 +63,28 @@ export ARCH=arm64
 export CLANG_TRIPLE=aarch64-linux-gnu-
 export CROSS_COMPILE=aarch64-linux-
 
+# Allow constrained builders to lower parallelism without editing this script.
+JOBS="${JOBS:-$(nproc)}"
+
+# The filtered live output keeps routine builds readable, while build.log keeps
+# the complete compiler output.  When a target fails, show the first failure
+# and the preceding lines from that raw log; this is usually where clang (or a
+# host tool) explains why the subsequent missing-object errors occurred.
+show_first_failure_context() {
+  local failure_line context_start context_end
+
+  failure_line=$(grep -n -m1 -E \
+    '(^|: )(fatal )?error:|fatal:|clang:.*(unable|crash)|make(\[[0-9]+\])?: \*\*\*' \
+    "$OUT_DIR/build.log" | cut -d: -f1)
+
+  if [ -n "$failure_line" ]; then
+    context_start=$((failure_line > 40 ? failure_line - 40 : 1))
+    context_end=$((failure_line + 20))
+    echo -e "\n🔎 \033[1;36mFirst failure context from $OUT_DIR/build.log:\033[0m"
+    sed -n "${context_start},${context_end}p" "$OUT_DIR/build.log"
+  fi
+}
+
 # =====================[ START PROCESS ]=====================
 
 echo -e "\n🛠️  \033[1;34mStarting Kernel Build: $BASE_ZIPNAME\033[0m"
@@ -77,11 +99,12 @@ clang --version | head -n 1
 aarch64-linux-gcc --version | head -n 1
 
 echo -e "\n📱 \033[1;32mTarget Device: $DEVICE\033[0m"
+echo -e "🧵 \033[1;36mParallel build jobs: $JOBS\033[0m"
 
 # =====================[ DEFCONFIG ]=====================
 
 echo -e "\n📄 \033[1;36mSetting up defconfig...\033[0m"
-make O=$OUT_DIR ARCH=arm64 atoll_defconfig
+make O=$OUT_DIR ARCH=arm64 LLVM=1 LLVM_IAS=1 atoll_defconfig
 
 if [ $? -ne 0 ]; then
   echo -e "\n❌ \033[1;31mDefconfig failed. Exiting.\033[0m"
@@ -91,8 +114,10 @@ fi
 # =====================[ COMPILING ]=====================
 
 echo -e "\n🚀 \033[1;35mStarting compilation...\033[0m"
-make -j$(nproc) O=$OUT_DIR \
+make -j"$JOBS" O=$OUT_DIR \
   ARCH=arm64 \
+  LLVM=1 \
+  LLVM_IAS=1 \
   CC=clang \
   LD=ld.lld \
   AR=llvm-ar \
@@ -102,9 +127,17 @@ make -j$(nproc) O=$OUT_DIR \
   STRIP=llvm-strip \
   CLANG_TRIPLE=$CLANG_TRIPLE \
   CROSS_COMPILE=$CROSS_COMPILE \
-  2>&1 | tee out/build.log | grep --line-buffered -E "warning:|error:" | sed \
+  2>&1 | tee out/build.log | grep --line-buffered -E \
+  "warning:|error:|fatal:|Killed|No space left|Segmentation fault|clang:.*(unable|crash)|make(\[[0-9]+\])?: \*\*\*" | sed \
   -e 's/warning:/\x1b[1;33mwarning:\x1b[0m/g' \
   -e 's/error:/\x1b[1;31merror:\x1b[0m/g'
+
+BUILD_STATUS=${PIPESTATUS[0]}
+if [ "$BUILD_STATUS" -ne 0 ]; then
+  show_first_failure_context
+  echo -e "\n❌ \033[1;31mKernel compilation failed (see $OUT_DIR/build.log).\033[0m"
+  exit "$BUILD_STATUS"
+fi
 
 # =====================[ CHECK IMAGE ]=====================
 
