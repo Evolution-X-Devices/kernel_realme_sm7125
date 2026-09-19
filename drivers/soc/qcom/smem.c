@@ -582,13 +582,13 @@ static void *qcom_smem_get_private(struct qcom_smem *smem,
 	struct smem_partition_header *phdr;
 	void *item_ptr, *p_end;
 	size_t entry_size = 0;
-	u32 partition_size;
+	u32 partition_size = p_desc->size;
 	size_t cacheline;
 	u32 padding_data;
 	u32 e_size;
 
 	phdr = (struct smem_partition_header __iomem *)p_desc->virt_base;
-	p_end = (void __iomem *)phdr + p_desc->size;
+	p_end = (void __iomem *)phdr + partition_size;
 	cacheline = p_desc->cacheline;
 
 	e = phdr_to_first_uncached_entry(phdr);

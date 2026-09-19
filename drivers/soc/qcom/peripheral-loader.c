@@ -1844,9 +1844,10 @@ static int __init msm_pil_init(void)
 	g_md_toc = qcom_smem_get(QCOM_SMEM_HOST_ANY, SBL_MINIDUMP_SMEM_ID,
 				 &size);
 	pr_debug("Minidump: g_md_toc is %pa\n", &g_md_toc);
-	if (PTR_ERR(g_md_toc) == -EPROBE_DEFER) {
-		pr_err("SMEM is not initialized.\n");
-		return -EPROBE_DEFER;
+	if (IS_ERR(g_md_toc)) {
+		pr_warn("Minidump: SMEM table unavailable: %ld\n",
+			PTR_ERR(g_md_toc));
+		g_md_toc = NULL;
 	}
 
 	minidump_debug = map_prop(MINIDUMP_DEBUG_PROP);
