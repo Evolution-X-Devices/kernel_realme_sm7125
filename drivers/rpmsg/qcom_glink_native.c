@@ -2009,12 +2009,6 @@ static void qcom_glink_cancel_rx_work(struct qcom_glink *glink)
 	list_for_each_entry_safe(dcmd, tmp, &glink->rx_queue, node)
 		kfree(dcmd);
 }
-#ifdef  OPLUS_FEATURE_MODEM_DATA_NWPOWER
-//Ruansong@PSW.NW.DATA.2120730, 2019/07/11 add for RM_TAG_POWER_DEBUG
-#define GLINK_NATIVE_IRQ_NUM_MAX 10
-#define GLINK_NATIVE_IRQ_NAME_LEN 24
-static char glink_native_irq_names[GLINK_NATIVE_IRQ_NUM_MAX][GLINK_NATIVE_IRQ_NAME_LEN];
-#endif/*VENDOR_EDIT*/
 struct qcom_glink *qcom_glink_native_probe(struct device *dev,
 					   unsigned long features,
 					   struct qcom_glink_pipe *rx,
@@ -2023,18 +2017,12 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
 {
 	struct qcom_glink *glink;
 	unsigned long irqflags;
+	const char *irq_name = "glink-native";
 	bool vm_support;
 	u32 *arr;
 	int size;
 	int irq;
 	int ret;
-
-#ifdef OPLUS_FEATURE_MODEM_DATA_NWPOWER
-//Ruansong@PSW.NW.DATA.2120730, 2019/07/11 add for RM_TAG_POWER_DEBUG
-		static int glink_native_irq_index = 1;
-		char *glink_native_irq_name = glink_native_irq_names[0];
-		snprintf(glink_native_irq_names[0], GLINK_NATIVE_IRQ_NAME_LEN, "glink-native");
-#endif/*VENDOR_EDIT*/
 
 	glink = devm_kzalloc(dev, sizeof(*glink), GFP_KERNEL);
 	if (!glink)
@@ -2089,6 +2077,10 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
 		dev_err(dev, "failed to register early notif %d\n", ret);
 
 	irq = of_irq_get(dev->of_node, 0);
+	if (irq < 0) {
+		ret = irq;
+		goto unregister;
+	}
 
 	/* Use different irq flag option in case of gvm */
 	vm_support = of_property_read_bool(dev->of_node, "vm-support");
@@ -2097,21 +2089,16 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
 	else
 		irqflags = IRQF_SHARED;
 
-	ret = devm_request_irq(dev, irq,
-			       qcom_glink_native_intr,
-			       irqflags,
-			       "glink-native", glink);
-
-		if(glink_native_irq_index < GLINK_NATIVE_IRQ_NUM_MAX){
-			snprintf(glink_native_irq_names[glink_native_irq_index], GLINK_NATIVE_IRQ_NAME_LEN, "glink-native-%s", glink->name);
-			glink_native_irq_name = glink_native_irq_names[glink_native_irq_index];
-			glink_native_irq_index++;
-		}
-		ret = devm_request_irq(dev, irq,
-					   qcom_glink_native_intr,
-					   IRQF_NO_SUSPEND | IRQF_SHARED,
-					   glink_native_irq_name, glink);
-		pr_err("qcom_glink_native_probe: def:%s final:%s index:%d irq:%d\n", glink_native_irq_names[0], glink_native_irq_name, glink_native_irq_index,irq);
+#ifdef OPLUS_FEATURE_MODEM_DATA_NWPOWER
+	irq_name = devm_kasprintf(dev, GFP_KERNEL, "glink-native-%s", glink->name);
+	if (!irq_name) {
+		ret = -ENOMEM;
+		goto unregister;
+	}
+	irqflags |= IRQF_NO_SUSPEND;
+#endif
+	ret = devm_request_irq(dev, irq, qcom_glink_native_intr,
+			       irqflags, irq_name, glink);
 
 	if (ret) {
 		dev_err(dev, "failed to request IRQ\n");
