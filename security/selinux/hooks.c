@@ -32,6 +32,7 @@
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
 #include <linux/lsm_hooks.h>
+#include <linux/selinux.h>
 #include <linux/xattr.h>
 #include <linux/capability.h>
 #include <linux/unistd.h>
@@ -119,7 +120,15 @@ __setup("enforcing=", enforcing_setup);
 #define selinux_enforcing_boot 1
 #endif
 
-int selinux_enabled_boot __initdata = 1;
+/* Retain the LSM selection for runtime status queries from Oplus rootguard. */
+int selinux_enabled_boot __ro_after_init = 1;
+
+bool selinux_is_enabled(void)
+{
+	return selinux_enabled_boot && !selinux_disabled(&selinux_state);
+}
+EXPORT_SYMBOL_GPL(selinux_is_enabled);
+
 #ifdef CONFIG_SECURITY_SELINUX_BOOTPARAM
 static int __init selinux_enabled_setup(char *str)
 {
