@@ -176,6 +176,10 @@ bool lmk_kill_possible(void)
 {
 	unsigned long val = atomic64_read(&lmk_feed);
 
+	/* Userspace LMKD may have disabled this driver's shrinker. */
+	if (!READ_ONCE(enable_lmk))
+		return false;
+
 	return !val || time_after_eq(jiffies, val);
 }
 
